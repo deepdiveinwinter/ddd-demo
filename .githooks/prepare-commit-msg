@@ -1,0 +1,35 @@
+#!/bin/sh
+# Pre-fills the commit message from the staged changes with Claude Code.
+# The message follows .claude/rules/commit-messages.md, which Claude Code loads as project memory.
+#
+# Runs only when git opens an editor without a message, e.g. committing from VS Code
+# with an empty message box. Skips -m/-F, merges, squashes and amends.
+# Exits quietly when nothing is staged, the Claude CLI is missing or fails, or the output
+# is not a Conventional Commit, so a commit never depends on it.
+
+msg_file=$1
+source=$2
+
+[ -z "$source" ] || exit 0
+git diff --cached --quiet && exit 0
+
+claude_bin=$(command -v claude)
+if [ -z "$claude_bin" ]; then
+  # Fall back to the CLI bundled with the newest Claude Code VS Code extension.
+  claude_bin=$(ls -d "$HOME"/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude 2>/dev/null | sort -V | tail -n 1)
+fi
+[ -n "$claude_bin" ] && [ -x "$claude_bin" ] || exit 0
+
+draft="$msg_file.claude"
+{ git diff --cached --stat; echo; git diff --cached | head -c 60000; } |
+  perl -e 'alarm shift; exec @ARGV' 60 \
+    "$claude_bin" -p --model haiku --tools "" --strict-mcp-config \
+      --disable-slash-commands --no-session-persistence \
+      "Write the commit message for the staged changes given on stdin, following this project's commit message rules. Output only the commit message itself, with no code fences and no explanation." \
+    > "$draft" 2>/dev/null
+
+if [ $? -eq 0 ] && head -n 1 "$draft" | grep -Eq '^[a-z]+(\([^)]+\))?!?: .+'; then
+  cat "$msg_file" >> "$draft" && mv "$draft" "$msg_file"
+fi
+rm -f "$draft"
+exit 0
