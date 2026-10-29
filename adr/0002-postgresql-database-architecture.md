@@ -1,4 +1,4 @@
-# 4. PostgreSQL database architecture decision
+# 2. PostgreSQL database architecture decision
 
 Date: 2026-10-29
 
